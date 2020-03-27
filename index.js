@@ -30,6 +30,30 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
 
     }
 
+    async function introduction(agent) {
+
+        return await getData('bot!B1')
+            .then(data=>{
+                const company_name = data[0][0];
+                console.log(data);
+                agent.add(`Welcome to ${company_name}!`);
+                agent.setContext({ name: 'promptdata', lifespan: 99, parameters: { company_name: company_name }});
+            });
+
+    }
+
+    async function transfer(agent) {
+
+        return await getData('setup!B1')
+            .then(data=>{
+                const phone_number = data[0][0];
+                console.log(data);
+                agent.setContext({ name: 'transferdata', lifespan: 99, parameters: { phone_number: phone_number }});
+            });
+
+    }
+
+
     async  function testWrite(agent){
         return await
             getJwt()
@@ -47,7 +71,9 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
     // Run the proper function handler based on the matched Dialogflow intent name
     let intentMap = new Map();
     intentMap.set('Default Welcome Intent', welcome);
+    intentMap.set('Introduction', introduction);
     intentMap.set('TESTING: write to cell', testWrite);
+    intentMap.set('transfer', transfer);
     agent.handleRequest(intentMap);
 });
 
