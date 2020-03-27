@@ -30,6 +30,15 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
 
     }
 
+    async  function testWrite(agent){
+        return await
+            getJwt()
+            .then(
+                (jwt)=> writeData(jwt,'write!C2', Date.now() ))
+            .then(res=>console.log(JSON.stringify(res)))
+            .catch(err=>console.error(err));
+    }
+
     function fallback(agent) {
         agent.add(`I didn't understand`);
         agent.add(`I'm sorry, can you try again?`);
@@ -38,9 +47,17 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
     // Run the proper function handler based on the matched Dialogflow intent name
     let intentMap = new Map();
     intentMap.set('Default Welcome Intent', welcome);
+    intentMap.set('TESTING: write to cell', testWrite);
     agent.handleRequest(intentMap);
 });
 
+async function getJwt() {
+    const credentials = require("./credentials.json");
+    return await new google.auth.JWT(
+        credentials.client_email, null, credentials.private_key,
+        ['https://www.googleapis.com/auth/spreadsheets']
+    );
+}
 
 async function getData(range) {
     const sheets = google.sheets({version: 'v4'});
@@ -51,4 +68,24 @@ async function getData(range) {
             key: key,
         };
     return (await sheets.spreadsheets.values.get(params)).data.values;
+}
+
+async function writeData(auth, cell, value){
+    const sheets = google.sheets({version: 'v4'});
+
+    const request = {
+        // The ID of the spreadsheet to update.
+        key: key,
+        auth: auth,
+        spreadsheetId: sheetId,
+        range: cell,
+        valueInputOption: 'RAW',
+        resource: {
+            range: cell,
+            majorDimension: 'ROWS',
+            values: [[value]]
+        },
+    };
+
+    return (await sheets.spreadsheets.values.update(request)).data;
 }
