@@ -6,17 +6,31 @@
 const functions = require('firebase-functions');
 const {WebhookClient} = require('dialogflow-fulfillment');
 const {google} = require('googleapis');
-
-// For sheet intregration
-const key = 'AIzaSyCiDSamuSwwaQgy5l9uHXrq72wh0VvSCbo';
-const sheetId = '16rs2cUv5yL-N0eUt1BjTqr2xDaO8nyORE-Cq1ZBaylA';
+const {getCell, writeData} = require('./sheets.js');
 
 process.env.DEBUG = 'dialogflow:debug'; // enables lib debugging statements
+
+const COMPANY_NAME_CELL = 'bot!B1';
+const BUSINESS_NUMBER_CELL = 'setup!B5';
+
+let jwt = false;
+async function getJwt() {
+    const credentials = require("./credentials.json");
+    return await new google.auth.JWT(
+        credentials.client_email, null, credentials.private_key,
+        ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/calendar']
+    );
+}
+
 
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
     const agent = new WebhookClient({request, response});
     console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
     console.log('Dialogflow Request body: ' + JSON.stringify(request.body));
+
+    // populate the JWT as needed
+    if(!jwt)
+        jwt = getJwt();
 
     // Agent vars
     let customer_name = 'David';
@@ -43,7 +57,7 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
 
     async function welcome(agent) {
 
-        return await getCell('bot!B1')
+        return await getCell(COMPANY_NAME_CELL)
             .then(data => {
                 const company_name = data;
                 console.log(data);
@@ -82,7 +96,7 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
                 ])
                 */
             })
-            .then(() => getCell('setup!B5'))
+            .then(() => getCell(BUSINESS_NUMBER_CELL))
             .then(data => {
                     business_number = data;
                     agent.setContext({
@@ -114,7 +128,7 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
     function contactLater(agent){
 
         const responseSet1 = [
-            "No problem. I jsut wanted to let you know #promptdata.company_name is open again.",
+            "No problem. I just wanted to let you know #promptdata.company_name is open again.",
             "Sorry, we just wanted to let you know #promptdata.company_name is open."
         ];
 
@@ -137,10 +151,7 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
 
 
     async function testWrite(agent) {
-        return await
-            getJwt()
-                .then(
-                    (jwt) => writeData(jwt, 'write!C2', Date.now()))
+        await writeData('write!C2', Date.now())
                 .then(res => console.log(JSON.stringify(res)))
                 .catch(err => console.error(err));
     }
@@ -180,47 +191,6 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
     agent.handleRequest(intentMap);
 });
 
-
-
-async function getJwt() {
-    const credentials = require("./credentials.json");
-    return await new google.auth.JWT(
-        credentials.client_email, null, credentials.private_key,
-        ['https://www.googleapis.com/auth/spreadsheets']
-    );
-}
-
-async function getCell(range) {
-    const sheets = google.sheets({version: 'v4'});
-    let params =
-        {
-            spreadsheetId: sheetId,
-            range: range,
-            key: key,
-        };
-    // ToDo: error checking
-    return (await sheets.spreadsheets.values.get(params)).data.values[0][0];
-}
-
-async function writeData(auth, cell, value) {
-    const sheets = google.sheets({version: 'v4'});
-
-    const request = {
-        // The ID of the spreadsheet to update.
-        key: key,
-        auth: auth,
-        spreadsheetId: sheetId,
-        range: cell,
-        valueInputOption: 'RAW',
-        resource: {
-            range: cell,
-            majorDimension: 'ROWS',
-            values: [[value]]
-        },
-    };
-
-    return (await sheets.spreadsheets.values.update(request)).data;
-}
 
 Array.prototype.sample = function(){
     return this[Math.floor(Math.random()*this.length)];
