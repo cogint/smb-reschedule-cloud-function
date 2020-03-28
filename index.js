@@ -222,7 +222,7 @@ exports.dialogflowFirebaseFulfillment =  functions.https.onRequest((request, res
     let intentMap = new Map();
 
     // debugging and tests
-    intentMap.set('TESTING: write to cell', testWrite);
+    // intentMap.set('TESTING: write to cell', testWrite);
 
     // Initiation intents
     intentMap.set('Default Welcome Intent', welcome);
