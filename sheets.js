@@ -4,7 +4,6 @@ const {google} = require('googleapis');
 const sheetId = '16rs2cUv5yL-N0eUt1BjTqr2xDaO8nyORE-Cq1ZBaylA';
 const key = 'AIzaSyCiDSamuSwwaQgy5l9uHXrq72wh0VvSCbo';
 
-
 exports.getCell = async function (range) {
     const sheets = google.sheets({version: 'v4'});
     let params =
@@ -17,7 +16,7 @@ exports.getCell = async function (range) {
     return (await sheets.spreadsheets.values.get(params)).data.values[0][0];
 };
 
-exports.writeData = async function (cell, value) {
+exports.writeData = async function (jwt, cell, value) {
     const sheets = google.sheets({version: 'v4'});
 
     const request = {
