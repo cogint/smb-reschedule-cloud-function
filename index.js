@@ -11,9 +11,12 @@ const cal = require('./calendar');
 
 process.env.DEBUG = 'dialogflow:debug'; // enables lib debugging statements
 
+// Ranges used for Sheets interface
 const COMPANY_NAME_CELL = 'bot!B1';
 const BUSINESS_NUMBER_CELL = 'setup!B5';
 const TRANSFER_NUMBER_CELL = 'setup!B1';
+const DISPOSITION_COL = 'phone numbers!D';
+const DIALER_RANGE = 'phone numbers!A:D';
 
 let jwt = false;
 async function getJwt() {
@@ -28,40 +31,34 @@ async function getJwt() {
     );
 }
 
+let dispositionSet = false;
+
 exports.dialogflowFirebaseFulfillment =  functions.https.onRequest((request, response) => {
     const agent = new WebhookClient({request, response});
     console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
     console.log('Dialogflow Request body: ' + JSON.stringify(request.body));
 
-    /*
-    // populate the JWT as needed
-    if(jwt===false){
-        getJwt()
-            .then(token=>{
-                jwt = token;
-                console.log("JWT: ", token)
-            });
-    }*/
-
     // Agent vars
-    let customer_name = 'David';
+    let customer_name = "";
     let company_name = "";
     let business_number = "";
     let phone_number = "";
+    let calling_number = "";
+    let called_number = "";
+    let call_direction;
 
     // Use responses from the GUI and substitute variable names as needed
     function useGuiResponses(){
         request.body.queryResult.fulfillmentMessages.forEach(message=>{
             let msg = message.text.text[0];
-            msg = msg.replace("${company_name}", company_name);
-            msg = msg.replace("${customer_name}", customer_name);
-            msg = msg.replace("${phone_number}", phone_number);
-            msg = msg.replace("${business_number}", business_number);
+            msg = msg.replace(/\$company_name/i, company_name);
+            msg = msg.replace(/\$customer_name/i, customer_name);
+            msg = msg.replace(/\$phone_number/i, phone_number);
+            msg = msg.replace(/\$business_number/i, business_number);
 
             agent.add(msg);
-            console.log(msg);
+            console.log("useGuiResponses: " + msg);
         })
-
     }
 
     // Meant for inbound text
@@ -69,7 +66,7 @@ exports.dialogflowFirebaseFulfillment =  functions.https.onRequest((request, res
 
         return await sheets.getCell(COMPANY_NAME_CELL)
             .then(data => {
-                const company_name = data;
+                company_name = data;
                 console.log(data);
                 agent.add(`Hi. Thanks for contacting ${company_name}!`);
                 agent.add(`We are back open. Would you like to schedule an appointment?`);
@@ -82,12 +79,15 @@ exports.dialogflowFirebaseFulfillment =  functions.https.onRequest((request, res
         console.log("Call from Drachtio");
         //console.log(request.body);
 
-        const customer_name = agent.parameters.customer_name;
-        const calling_number = agent.parameters.calling_number;
+        customer_name = agent.parameters.customer_name;
+        calling_number = agent.parameters.calling_number;
+
+        let parameters = agent.parameters;
+
 
         return await sheets.getCell(COMPANY_NAME_CELL)
             .then(data => {
-                const company_name = data;
+                company_name = data;
                 console.log(`company_name: ${data}`);
                 agent.add(`<speak><break time="1">Thanks for calling ${company_name}!</speak>`);
 
@@ -95,7 +95,9 @@ exports.dialogflowFirebaseFulfillment =  functions.https.onRequest((request, res
                     agent.add(`<speak>It looks like I am speaking to ${customer_name.split(" ")[0]} ?<break time="500ms"></speak>`);
 
                 agent.add(`<speak><p><s>We are back open.</s> <s>Would you like to schedule an appointment?</s></speak>`);
-                agent.setContext({name: 'promptdata', lifespan: 99, parameters: {company_name: company_name}});
+
+                parameters.company_name = company_name;
+                agent.setContext({name: 'promptdata', lifespan: 99, parameters: parameters});
             });
 
     }
@@ -104,9 +106,11 @@ exports.dialogflowFirebaseFulfillment =  functions.https.onRequest((request, res
     async function introduction(agent) {
 
         // ToDo: get from a parameter once Drachtio sends that
-        const customer_name = agent.parameters.customer_name;
+        call_direction = "outbound";
+        customer_name = agent.parameters.customer_name;
+        called_number = agent.parameters.called_number;
 
-
+        // ToDo: have dractio pull the company name
         return await sheets.getCell(COMPANY_NAME_CELL)
             .then(data => {
                 //ToDo: error checking
@@ -122,7 +126,9 @@ exports.dialogflowFirebaseFulfillment =  functions.https.onRequest((request, res
                         parameters: {
                             company_name: company_name,
                             customer_name: customer_name,
-                            business_number: business_number
+                            business_number: business_number,
+                            called_number: called_number,
+                            call_direction: outbound
                         }
                     });
                 }
@@ -163,14 +169,9 @@ exports.dialogflowFirebaseFulfillment =  functions.https.onRequest((request, res
         agent.add(responseSet2.sample());
         agent.add(responseSet3.sample());
 
+        if (call_direction==='outbound')
+            disposition(called_number, "try later");
 
-    }
-
-    // ToDo: remove - no longer needed?
-    async function testWrite(agent) {
-        await writeData(jwt, 'write!C2', Date.now())
-                .then(res => console.log(JSON.stringify(res)))
-                .catch(err => console.error(err));
     }
 
     function schedule(agent){
@@ -188,13 +189,27 @@ exports.dialogflowFirebaseFulfillment =  functions.https.onRequest((request, res
         const appointmentTimeString = cal.getLocaleTimeString(dateTimeStart);
         const appointmentDateString = cal.getLocaleDateString(dateTimeStart);
         // Check the availability of the time slot and set up an appointment if the time slot is available on the calendar
+
+        // ToDo: it would be nice to have the typing in the background during the calendar lookup
+        const max = 5;
+        const min = 2;
+        const duration = Math.random() * (max - min) + min;
+
         return getJwt()
             .then(jwt=>cal.createCalendarEvent(jwt, dateTimeStart, dateTimeEnd))
             .then(() => {
-            agent.add(`Got it. I have your appointment scheduled on ${appointmentDateString} at ${appointmentTimeString}. See you soon. Good-bye.`);
+                agent.add(`<speak><audio repeatDur="${duration} s" src= "https://actions.google.com/sounds/v1/office/keyboard_typing_fast_close.ogg"><desc>keyboard typing</desc></audio></speak>`);
+                agent.add(`Got it. I have your appointment scheduled on ${appointmentDateString} at ${appointmentTimeString}. See you soon. Good-bye.`);
+                if(call_direction ==='outbound')
+                    disposition(called_number, `Scheduled for  ${appointmentDateString} ${appointmentTimeString}`);
         }).catch((err) => {
-            console.log("Apointment rejected: ", err);
-            agent.add(`Sorry, we're booked on ${appointmentDateString} at ${appointmentTimeString}. Is there anything else I can do for you?`);
+            console.log("Appointment rejected: ", err);
+            agent.add(`<speak><audio repeatDur="${duration} s" src= "https://actions.google.com/sounds/v1/office/keyboard_typing_fast_close.ogg"><desc>keyboard typing</desc></audio></speak>`);
+            agent.add([
+                `<speak>Sorry, we're booked on ${appointmentDateString} at ${appointmentTimeString}. <break time="500ms"> Are there any other times that would work?</speak>`,
+                `<speak>Unfortunately ${appointmentTimeString} on ${appointmentDateString} is not free. <break time="400ms"> Are there other times on ${appointmentDateString} that work for you?</speak>`,
+                `<speak>It looks like ${appointmentDateString} at ${appointmentTimeString} is taken. <break time="600ms"> How about another time?</speak>`
+            ].sample());
         });
     }
 
@@ -234,4 +249,23 @@ exports.dialogflowFirebaseFulfillment =  functions.https.onRequest((request, res
 Array.prototype.sample = function(){
     return this[Math.floor(Math.random()*this.length)];
 };
+
+function disposition(phone_num, message){
+
+    if(dispositionSet)
+        return;
+
+    sheets.getRange(DIALER_RANGE)
+        .then(data => {
+            data.find( (row, index) => {
+                if (row[0] === phone_num){
+                    getJwt()
+                        .then(jwt=>{
+                            sheets.writeData(jwt, DISPOSITION_COL + (index + 1) , message );
+                            dispositionSet = true;
+                        });
+                }
+            })
+        });
+}
 

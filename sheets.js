@@ -16,6 +16,18 @@ exports.getCell = async function (range) {
     return (await sheets.spreadsheets.values.get(params)).data.values[0][0];
 };
 
+exports.getRange = async function (range) {
+    const sheets = google.sheets({version: 'v4'});
+    let params =
+        {
+            spreadsheetId: sheetId,
+            range: range,
+            key: key,
+        };
+    // ToDo: error checking
+    return (await sheets.spreadsheets.values.get(params)).data.values;
+};
+
 exports.writeData = async function (jwt, cell, value) {
     const sheets = google.sheets({version: 'v4'});
 
