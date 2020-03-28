@@ -14,53 +14,140 @@ const sheetId = '16rs2cUv5yL-N0eUt1BjTqr2xDaO8nyORE-Cq1ZBaylA';
 process.env.DEBUG = 'dialogflow:debug'; // enables lib debugging statements
 
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
-    const agent = new WebhookClient({ request, response });
+    const agent = new WebhookClient({request, response});
     console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
     console.log('Dialogflow Request body: ' + JSON.stringify(request.body));
 
+    // Agent vars
+    let customer_name = 'David';
+    let company_name = "";
+    let business_number = "";
+    let phone_number = "";
+
+    // Use responses from the GUI and substitute variable names as needed
+    function useGuiResponses(){
+        request.body.queryResult.fulfillmentMessages.forEach(message=>{
+            let msg = message.text.text[0];
+            msg = msg.replace("${company_name}", company_name);
+            msg = msg.replace("${customer_name}", customer_name);
+            msg = msg.replace("${phone_number}", phone_number);
+            msg = msg.replace("${business_number}", business_number);
+
+
+            agent.add(msg);
+            console.log(msg);
+        })
+
+    }
+
+
     async function welcome(agent) {
 
-        return await getData('bot!B1')
-            .then(data=>{
-                const company_name = data[0][0];
+        return await getCell('bot!B1')
+            .then(data => {
+                const company_name = data;
                 console.log(data);
                 agent.add(`Welcome to ${company_name}!`);
-                agent.setContext({ name: 'promptdata', lifespan: 99, parameters: { company_name: company_name }});
+                agent.setContext({name: 'promptdata', lifespan: 99, parameters: {company_name: company_name}});
             });
 
     }
 
     async function introduction(agent) {
 
-        return await getData('bot!B1')
-            .then(data=>{
-                const company_name = data[0][0];
-                console.log(data);
-                agent.add(`Welcome to ${company_name}!`);
-                agent.setContext({ name: 'promptdata', lifespan: 99, parameters: { company_name: company_name }});
-            });
+        // ToDo: get from a parameter once Drachtio sends that
+
+        return await getCell('bot!B1')
+            .then(data => {
+                //ToDo: error checking
+                company_name = data;
+                useGuiResponses();
+
+                //agent.setContext({ name: 'promptdata', lifespan: 99, parameters: { company_name: company_name, customer_name: customer_name}});
+
+                //console.log(JSON.stringify(request.body.queryResult.fulfillmentMessages));
+
+                // ToDo: find a better way to do this
+
+                /*
+                agent.add([
+                    `Hi, I am an automated assistant calling on behalf of ${company_name} to reschedule your appointment.`,
+                    `Hello. I am an automated assistant for a  ${company_name}. I am calling to reschedule your appointment that was cancelled.`,
+                    `Hi. I am calling about your appointment with a ${company_name} that was cancelled. I am a virtual assistant here to help reschedule that.`
+                ]);
+                agent.add([
+                    `Is this ${customer_name}?`,
+                    `Can I speak to ${customer_name}?`,
+                    `Am I talking to ${customer_name}?`
+                ])
+                */
+            })
+            .then(() => getCell('setup!B5'))
+            .then(data => {
+                    business_number = data;
+                    agent.setContext({
+                        name: 'promptdata',
+                        lifespan: 99,
+                        parameters: {
+                            company_name: company_name,
+                            customer_name: customer_name,
+                            business_number: business_number
+                        }
+                    });
+                }
+            )
+            .catch(err=>console.error(err));
 
     }
 
     async function transfer(agent) {
 
-        return await getData('setup!B1')
-            .then(data=>{
-                const phone_number = data[0][0];
+        return await getCell('setup!B1')
+            .then(data => {
+                phone_number = data;
                 console.log(data);
-                agent.setContext({ name: 'transferdata', lifespan: 99, parameters: { phone_number: phone_number }});
+                agent.setContext({name: 'transferdata', lifespan: 99, parameters: {phone_number: phone_number}});
             });
 
     }
 
+    function contactLater(agent){
 
-    async  function testWrite(agent){
+        const responseSet1 = [
+            "No problem. I jsut wanted to let you know #promptdata.company_name is open again.",
+            "Sorry, we just wanted to let you know #promptdata.company_name is open."
+        ];
+
+        const responseSet2 = [
+            "Feel free to call or text #promptdata.business_number to reschedule.",
+            "Call or text #promptdata.business_number anytime to reschedule."
+        ];
+
+        const responseSet3 = [
+            "Have a good day. Bye.",
+            "Thanks for your help. Good bye!"
+        ];
+
+        agent.add(responseSet1.sample());
+        agent.add(responseSet2.sample());
+        agent.add(responseSet3.sample());
+
+
+    }
+
+
+    async function testWrite(agent) {
         return await
             getJwt()
-            .then(
-                (jwt)=> writeData(jwt,'write!C2', Date.now() ))
-            .then(res=>console.log(JSON.stringify(res)))
-            .catch(err=>console.error(err));
+                .then(
+                    (jwt) => writeData(jwt, 'write!C2', Date.now()))
+                .then(res => console.log(JSON.stringify(res)))
+                .catch(err => console.error(err));
+    }
+
+    function schedule(agent){
+        // ToDo:
+        agent.add("ok, let's get you scheduled")
     }
 
     function fallback(agent) {
@@ -70,12 +157,30 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
 
     // Run the proper function handler based on the matched Dialogflow intent name
     let intentMap = new Map();
+
+    // debugging and tests
+    intentMap.set('TESTING: write to cell', testWrite);
+
+    // Initiation intents
     intentMap.set('Default Welcome Intent', welcome);
     intentMap.set('Introduction', introduction);
-    intentMap.set('TESTING: write to cell', testWrite);
-    intentMap.set('transfer', transfer);
+
+    // no scheduling now
+    intentMap.set('contact later', contactLater);
+    intentMap.set('contact not there', contactLater);
+    intentMap.set('not ready to schedule', contactLater);
+    intentMap.set('contact not ready', contactLater);
+
+    // schedule
+    intentMap.set('contact ready', schedule);
+    intentMap.set('ready to schedule', schedule);
+
+
+    //intentMap.set('transfer', transfer);
     agent.handleRequest(intentMap);
 });
+
+
 
 async function getJwt() {
     const credentials = require("./credentials.json");
@@ -85,7 +190,7 @@ async function getJwt() {
     );
 }
 
-async function getData(range) {
+async function getCell(range) {
     const sheets = google.sheets({version: 'v4'});
     let params =
         {
@@ -93,10 +198,11 @@ async function getData(range) {
             range: range,
             key: key,
         };
-    return (await sheets.spreadsheets.values.get(params)).data.values;
+    // ToDo: error checking
+    return (await sheets.spreadsheets.values.get(params)).data.values[0][0];
 }
 
-async function writeData(auth, cell, value){
+async function writeData(auth, cell, value) {
     const sheets = google.sheets({version: 'v4'});
 
     const request = {
@@ -115,3 +221,8 @@ async function writeData(auth, cell, value){
 
     return (await sheets.spreadsheets.values.update(request)).data;
 }
+
+Array.prototype.sample = function(){
+    return this[Math.floor(Math.random()*this.length)];
+};
+
