@@ -11,7 +11,7 @@ const key = 'AIzaSyCiDSamuSwwaQgy5l9uHXrq72wh0VvSCbo';
 const timeZone = 'America/New_York';
 const timeZoneOffset = '-04:00';
 
-exports.createCalendarEvent = function (jwt, dateTimeStart, dateTimeEnd) {
+exports.createCalendarEvent = function (jwt, dateTimeStart, dateTimeEnd, title) {
     console.log("createCalendarEvent request from JWT: " + jwt.email);
 
     return new Promise((resolve, reject) => {
@@ -24,7 +24,7 @@ exports.createCalendarEvent = function (jwt, dateTimeStart, dateTimeEnd) {
         }, (err, calendarResponse) => {
             // Check if there exists any event on the calendar given the specified the time period
             if (err || calendarResponse.data.items.length > 0) {
-                console.error(err);
+                console.info("calendar error", err);
                 reject(err || new Error('Requested time conflicts with another appointment'));
             } else {
                 // Create an event for the requested time period
@@ -32,7 +32,7 @@ exports.createCalendarEvent = function (jwt, dateTimeStart, dateTimeEnd) {
                         auth: jwt,
                         calendarId: calendarId,
                         resource: {
-                            summary: 'TADHack Demo Appointment',
+                            summary: title,
                             start: {dateTime: dateTimeStart},
                             end: {dateTime: dateTimeEnd}
                         }
@@ -45,14 +45,33 @@ exports.createCalendarEvent = function (jwt, dateTimeStart, dateTimeEnd) {
     });
 };
 
+// A helper function that adds the integer value of 'hoursToAdd' to the Date instance 'dateObj' and returns a new Data instance.
+function addHours(dateObj, hoursToAdd) {
+    return new Date(new Date(dateObj).setHours(dateObj.getHours() + hoursToAdd));
+}
+exports.addHours = addHours;
+
 // A helper function that receives Dialogflow's 'date' and 'time' parameters and creates a Date instance.
 exports.convertParametersDate = function (date, time) {
-    return new Date(Date.parse(date.split('T')[0] + 'T' + time.split('T')[1].split('-')[0] + timeZoneOffset));
-};
+    // ToDo: temp hack to fix AM/PM mix-ups
 
-// A helper function that adds the integer value of 'hoursToAdd' to the Date instance 'dateObj' and returns a new Data instance.
-exports.addHours = function (dateObj, hoursToAdd) {
-    return new Date(new Date(dateObj).setHours(dateObj.getHours() + hoursToAdd));
+    // 0 - 7 should be PM
+    // 20-23 should be AM
+    // in the middle we should ask, but that is a To Do
+    let t = new Date(time);
+    t = addHours(t, -4);    //Timezone ofset on hours
+    let h = t.getHours();
+    if (h >= 0 && h <=7)
+        t = addHours(t, 12);
+    else if (h >= 20 && h<=23)
+        t = addHours(t, -12);
+
+    //let newDate = new Date(Date.parse(date.split('T')[0] + 'T' + time.split('T')[1].split('-')[0] + timeZoneOffset));
+
+    let newDate = new Date(Date.parse(date.split('T')[0] + 'T' + t.toISOString().split('T')[1].split('.')[0] + timeZoneOffset));
+    //console.log(newDate);
+    return newDate
+
 };
 
 // A helper function that converts the Date instance 'dateObj' into a string that represents this time in English.
