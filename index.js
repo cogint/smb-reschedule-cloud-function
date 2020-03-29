@@ -151,7 +151,7 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
 
     }
 
-    function contactLater(agent) {
+    async function contactLater(agent) {
 
         let promptData = agent.getContext('promptdata');
         company_name = promptData.parameters.company_name;
@@ -174,14 +174,16 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
         ];
 
 
-        agent.add(responseSet1.sample());
-        agent.add(responseSet2.sample());
-        agent.add(responseSet3.sample());
-
         // ToDo: I can't figure out why this won't write to the sheet
-        disposition(called_number, "try later")
+        return await
+            getJwt()
+                .then(jwt => disposition(jwt, called_number, "try later"))
+            .then(()=>{
+                agent.add(responseSet1.sample());
+                agent.add(responseSet2.sample());
+                agent.add(responseSet3.sample());
+            })
             .catch(err => console.log("disposition error: ", err));
-
 
     }
 
@@ -280,7 +282,8 @@ async function disposition(jwt, phone_num, message) {
 
     return await sheets.getRange(DIALER_RANGE)
         .then(data => {
-            let index = data.findIndex(row => (row[0].replace('+', '') === phone_num.replace('+', '')));
+            console.log(data);
+            let index = data.findIndex(row => row[0].replace('+', '') === phone_num.replace('+', ''));
             return  (index !== -1) ? index : Promise.reject('no matching phone number');
         })
         .then((index)=>
